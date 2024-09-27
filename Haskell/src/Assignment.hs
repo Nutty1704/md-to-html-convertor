@@ -1,4 +1,4 @@
-module Assignment (markdownParser, convertADTHTML, imageParser) where
+module Assignment (markdownParser, convertADTHTML, imageParser, footnoteReferenceParser) where
 
 
 import           Data.Time.Clock  (getCurrentTime)
@@ -15,6 +15,8 @@ data ADT = Empty
           | InlineCode String
           | Footnote String
           | Image String String String
+          | FootnoteReference ADT String
+          | FreeText String
   -- Your ADT **must** derive Show.
   deriving (Show, Eq)
 
@@ -51,10 +53,23 @@ imageParser = (Image <$> altTextParser <*> urlParser <*> captionParser) <|> pure
     urlParser = spaces *> is '(' *> some (isNot ' ') <* is ' '
     captionParser = spaces *> is '"' *> some (isNot '"') <* is '"' <* is ')'
 
+-- Parser for footnotes references ([^N]: ...)
+footnoteReferenceParser :: Parser ADT
+footnoteReferenceParser = do
+    spaces
+    n <- footnoteParser
+    _ <- string ": "
+    ref <- spaces *> some (isNot '\n')
+    return (FootnoteReference n ref)
+
+-- Parser for free text
+freeTextParser :: Parser ADT
+freeTextParser = FreeText <$> some (isNot '\n')
+
 
 -- Parser for markdown
 markdownParser :: Parser ADT
-markdownParser = italicsParser <|> boldParser <|> strikethroughParser <|> linkParser <|> inlineCodeParser <|> footnoteParser <|> imageParser <* eof
+markdownParser = italicsParser <|> boldParser <|> strikethroughParser <|> linkParser <|> inlineCodeParser <|> footnoteParser <|> imageParser <|> footnoteReferenceParser <|> freeTextParser <* eof
 
 getTime :: IO String
 getTime = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
@@ -68,3 +83,4 @@ convertADTHTML (Link text url) = "<a href=\"" ++ url ++ "\">" ++ text ++ "</a>"
 convertADTHTML (InlineCode s) = "<code>" ++ s ++ "</code>"
 convertADTHTML (Footnote s) = "<sup>" ++ s ++ "</sup>"
 convertADTHTML (Image alt url caption) = "<img src=\"" ++ url ++ "\" alt=\"" ++ alt ++ "\" title=\"" ++ caption ++ "\">"
+convertADTHTML (FootnoteReference (Footnote s) ref) = "<sup id=\"" ++ ref ++ "\"><a href=\"#fnref:" ++ ref ++ "\">" ++ s ++ "</a></sup>"
