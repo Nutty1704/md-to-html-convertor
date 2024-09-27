@@ -1,10 +1,10 @@
-module Assignment (markdownParser, convertADTHTML, boldParser, italicsParser, strikethroughParser, linkParser, inlineCodeParser, footnoteParser) where
+module Assignment (markdownParser, convertADTHTML, imageParser) where
 
 
 import           Data.Time.Clock  (getCurrentTime)
 import           Data.Time.Format (defaultTimeLocale, formatTime)
 import           Instances        (Parser (..))
-import           Parser           (is, isNot, string, spaces, digit)
+import           Parser           (is, isNot, string, spaces, digit, oneof, eof)
 import           Control.Applicative
 
 data ADT = Empty 
@@ -14,6 +14,7 @@ data ADT = Empty
           | Link String String
           | InlineCode String
           | Footnote String
+          | Image String String String
   -- Your ADT **must** derive Show.
   deriving (Show, Eq)
 
@@ -42,19 +43,28 @@ inlineCodeParser = (InlineCode <$> (is '`' *> some (isNot '`') <* is '`')) <|> p
 footnoteParser :: Parser ADT
 footnoteParser = (Footnote <$> (is '[' *> is '^' *> some (digit) <* is ']')) <|> pure Empty
 
+-- Parser for image (![Alt Text](URL "Caption"))
+imageParser :: Parser ADT
+imageParser = (Image <$> altTextParser <*> urlParser <*> captionParser) <|> pure Empty
+  where
+    altTextParser = many (oneof "\t ") *> is '!' *> is '[' *> some (isNot ']') <* is ']'
+    urlParser = spaces *> is '(' *> some (isNot ' ') <* is ' '
+    captionParser = spaces *> is '"' *> some (isNot '"') <* is '"' <* is ')'
+
 
 -- Parser for markdown
 markdownParser :: Parser ADT
-markdownParser = pure Empty
+markdownParser = italicsParser <|> boldParser <|> strikethroughParser <|> linkParser <|> inlineCodeParser <|> footnoteParser <|> imageParser <* eof
 
 getTime :: IO String
 getTime = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
 
 convertADTHTML :: ADT -> String
 convertADTHTML Empty = ""
-convertADTHTML (Italics s) = "<i>" ++ s ++ "</i>"
-convertADTHTML (Bold s) = "<b>" ++ s ++ "</b>"
-convertADTHTML (Strikethrough s) = "<s>" ++ s ++ "</s>"
+convertADTHTML (Italics s) = "<em>" ++ s ++ "</em>"
+convertADTHTML (Bold s) = "<strong>" ++ s ++ "</strong>"
+convertADTHTML (Strikethrough s) = "<del>" ++ s ++ "</del>"
 convertADTHTML (Link text url) = "<a href=\"" ++ url ++ "\">" ++ text ++ "</a>"
 convertADTHTML (InlineCode s) = "<code>" ++ s ++ "</code>"
 convertADTHTML (Footnote s) = "<sup>" ++ s ++ "</sup>"
+convertADTHTML (Image alt url caption) = "<img src=\"" ++ url ++ "\" alt=\"" ++ alt ++ "\" title=\"" ++ caption ++ "\">"
