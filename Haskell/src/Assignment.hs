@@ -1,10 +1,10 @@
-module Assignment (markdownParser, convertADTHTML, orderedListParser, tableParser) where
+module Assignment (markdownParser, convertADTHTML) where
 
 
 import           Data.Time.Clock  (getCurrentTime)
 import           Data.Time.Format (defaultTimeLocale, formatTime)
 import           Instances        (Parser (..))
-import           Parser           (is, isNot, string, spaces, digit, oneof, noneof, tok, char, charTok)
+import           Parser           (is, isNot, string, spaces, digit, oneof, noneof, tok, charTok, eof)
 import           Control.Applicative
 import           Control.Monad    (guard)
 
@@ -20,7 +20,7 @@ data ADT = Italics String
           | Header Int [ADT]
           | Blockquote [ADT]
           | Code String String
-          | Code String
+          | CodeNoLang String
           | OrderedList [ADT]
           | OrderedListItem [ADT]
           | Table [[ADT]]
@@ -66,7 +66,7 @@ rawTextParser = FreeText <$> some (noneof "_*~`[]^\n")
 
 -- Parser for free text
 freeTextParser :: Parser [ADT]
-freeTextParser = many (inlineModifierParser <|> rawTextParser <|> charParser)
+freeTextParser = some (inlineModifierParser <|> rawTextParser <|> charParser)
 
 
 -- Parser for a single character that is not a newline
@@ -77,15 +77,16 @@ charParser = Char <$> isNot '\n'
 -- Parser for paragraphs
 paragraphParser :: Parser ADT
 paragraphParser = do
-    some (is '\n')
+    _ <- many (is '\n')
     content <- freeTextParser
     return $ Paragraph content
+
 
 -- Parser for image (![Alt Text](URL "Caption"))
 imageParser :: Parser ADT
 imageParser = do
     -- Consume any leading newlines
-    some (is '\n')
+    _ <- some (is '\n')
     -- Parse the image format (![Alt Text](URL "Caption"))
     Image <$> altTextParser <*> urlParser <*> captionParser
   where
@@ -98,10 +99,10 @@ imageParser = do
 -- Parser for footnotes references ([^N]: ...)
 footnoteReferenceParser :: Parser ADT
 footnoteReferenceParser = do
-    some (is '\n')
-    spaces
+    _ <- some (is '\n')
+    _ <- spaces
     n <- footnoteParser
-    charTok ':'
+    _ <- charTok ':'
     ref <- spaces *> some (isNot '\n')
     return (FootnoteReference n ref)
 
@@ -109,10 +110,10 @@ footnoteReferenceParser = do
 -- Parser for headers (#)
 headerParser :: Parser ADT
 headerParser = do
-    many (is '\n')
+    _ <- many (is '\n')
     n <- length <$> some (is '#')
     guard (n >= 1 && n <= 6)
-    many (oneof "\t ")
+    _ <- many (oneof "\t ")
     content <- freeTextParser
     return $ Header n content
 
@@ -120,9 +121,9 @@ headerParser = do
 -- Parser for Blockquotes (>)
 blockquoteParser :: Parser ADT
 blockquoteParser = do
-  some (is '\n')
-  spaces
-  charTok '>'
+  _ <- some (is '\n')
+  _ <- spaces
+  _ <- charTok '>'
   content <- freeTextParser
   return $ Blockquote content
 
@@ -130,13 +131,13 @@ blockquoteParser = do
 -- Parser for code
 codeParser :: Parser ADT
 codeParser = do
-  some (is '\n')
-  spaces *> string "```"
+  _ <- some (is '\n')
+  _ <- spaces *> string "```"
   language <- spaces *> some (isNot '\n')
-  is '\n'
+  _ <- is '\n'
   text <- many (isNot '`')
-  spaces *> string "```"
-  return $ if null language then Code text else Code language text
+  _ <- spaces *> string "```"
+  return $ if null language then CodeNoLang text else Code language text
 
 
 -- Parser for an ordered list item (e.g., "1. Item")
@@ -146,7 +147,7 @@ orderedListFirstItemParser = do
     n <- some digit
     guard (n == "1") -- The first item must start with 1
     -- Parse the ". " separator
-    is '.' *> spaces
+    _ <- is '.' *> spaces
     -- Parse the content of the list item (it can contain text modifiers or plain text)
     content <- freeTextParser
     return $ OrderedListItem content
@@ -157,7 +158,7 @@ orderedListItemParser = do
     -- Parse the number (must be positive)
     n <- some digit
     -- Parse the ". " separator
-    is '.' *> spaces
+    _ <- is '.' *> spaces
     -- Parse the content of the list item (it can contain text modifiers or plain text)
     content <- freeTextParser
     return $ OrderedListItem content
@@ -166,14 +167,14 @@ orderedListItemParser = do
 sublistItemParser :: Parser ADT
 sublistItemParser = do
     -- Parse the leading spaces
-    string "    "
+    _ <- string "    "
     -- Parse the sublist item (same format as an ordered list item)
     orderedListItemParser
 
 --Parser for sub list
 subListParser :: Parser ADT
 subListParser = do
-    string "    "
+    _ <- string "    "
     -- Parse the first ordered list item
     firstItem <- orderedListFirstItemParser
     -- Parse additional items, if present, separated by exactly one newline
@@ -184,7 +185,7 @@ subListParser = do
 -- Parser for an ordered list (contains at least one item, separated by exactly one newline)
 orderedListParser :: Parser ADT
 orderedListParser = do
-    some (is '\n')
+    _ <- some (is '\n')
     -- Parse the first ordered list item
     firstItem <- orderedListItemParser
     -- Parse additional items, if present, separated by exactly one newline
@@ -195,9 +196,9 @@ orderedListParser = do
 -- Parser for a table row (e.g., "| Cell1 | Cell2 |")
 tableRowParser :: Parser [ADT]
 tableRowParser = do
-    spaces
+    _ <- spaces
     -- Parse the leading pipe
-    charTok '|'
+    _ <- charTok '|'
     -- Parse each cell, separated by pipes, trimming spaces using `tok` for cells
     cells <- some (tok (some (noneof "|\n")) <* charTok '|')
     return $ map FreeText cells
@@ -205,17 +206,17 @@ tableRowParser = do
 -- Parser for the separator row (e.g., "| --- | --- |")
 separatorRowParser :: Parser ()
 separatorRowParser = do
-    spaces
+    _ <- spaces
     -- Parse the leading pipe
-    charTok '|'
+    _ <- charTok '|'
     -- Parse dashes for each column, separated by pipes, using `spaces` to ignore extra spaces
-    some (spaces *> some (is '-') *> spaces <* charTok '|')
+    _ <- some (spaces *> some (is '-') *> spaces <* charTok '|')
     return ()
 
 -- Parser for the entire table
 tableParser :: Parser ADT
 tableParser = do
-    some (is '\n')
+    _ <- some (is '\n')
     -- Parse the header row
     header <- tableRowParser
     -- Parse the separator row
@@ -228,7 +229,7 @@ tableParser = do
 
 -- Parser for markdown
 markdownParser :: Parser ADT
-markdownParser = HTMLElems <$> many(imageParser <|> footnoteReferenceParser <|> headerParser <|> blockquoteParser <|> codeParser <|> orderedListParser <|> tableParser <|> paragraphParser)
+markdownParser = HTMLElems <$> some(imageParser <|> footnoteReferenceParser <|> headerParser <|> blockquoteParser <|> codeParser <|> orderedListParser <|> tableParser <|> paragraphParser)
 
 getTime :: IO String
 getTime = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
@@ -246,7 +247,7 @@ convertADTHTML (FreeText s) = s
 convertADTHTML (Header n content) = "<h" ++ show n ++ ">" ++ concatMap convertADTHTML content ++ "</h" ++ show n ++ ">"
 convertADTHTML (Blockquote content) = undefined
 convertADTHTML (Code language text) = "<pre><code class=\"" ++ language ++ "\">" ++ text ++ "</code></pre>"
-convertADTHTML (Code text) = "<pre><code>" ++ text ++ "</code></pre>"
+convertADTHTML (CodeNoLang text) = "<pre><code>" ++ text ++ "</code></pre>"
 convertADTHTML (OrderedList items) = "<ol>" ++ concatMap (\item -> "<li>" ++ convertADTHTML item ++ "</li>") items ++ "</ol>"
 convertADTHTML (OrderedListItem content) = concatMap convertADTHTML content
 convertADTHTML (Table rows) = "<table>" ++ concatMap (\row -> "<tr>" ++ concatMap (\cell -> "<td>" ++ convertADTHTML cell ++ "</td>") row ++ "</tr>") rows ++ "</table>"
@@ -262,3 +263,4 @@ convertADTHTML (HTMLElems elems) = "<!DOCTYPE html>\n" ++
                                         concatMap convertADTHTML elems ++
                                     "</body>\n" ++
                                     "</html>"
+convertADTHTML _ = ""
