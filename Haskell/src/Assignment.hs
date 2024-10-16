@@ -4,7 +4,7 @@ module Assignment (markdownParser, convertADTHTML) where
 import           Data.Time.Clock  (getCurrentTime)
 import           Data.Time.Format (defaultTimeLocale, formatTime)
 import           Instances        (Parser (..))
-import           Parser           (is, isNot, string, spaces, digit, oneof, noneof, charTok)
+import           Parser           (is, isNot, string, spaces, digit, oneof, noneof, inlineSpace, charTok)
 import           Control.Applicative
 import           Control.Monad    (guard)
 
@@ -119,8 +119,8 @@ footnoteReferenceParser = do
 
 
 -- Parser for headers (#)
-headerParser :: Parser ADT
-headerParser = do
+normalHeaderParser :: Parser ADT
+normalHeaderParser = do
     _ <- many (is '\n')
     n <- length <$> some (is '#')
     guard (n >= 1 && n <= 6)
@@ -129,14 +129,39 @@ headerParser = do
     return $ Header n content
 
 
+altHeaderParser :: Parser ADT
+altHeaderParser = do
+    _ <- many (is '\n') *> spaces
+    text <- freeTextParser <* is '\n'
+    nxtLine <- inlineSpace *> many (isNot '\n')
+    let n = if all (== '=') nxtLine && length nxtLine > 1
+                then 1 
+            else if all (== '-') nxtLine && length nxtLine > 1
+                then 2 
+            else 0
+    guard (n > 0)
+    return $ Header n text
+
+
+headerParser :: Parser ADT
+headerParser = normalHeaderParser <|> altHeaderParser
+
+
 -- Parser for Blockquotes (>)
 blockquoteParser :: Parser ADT
 blockquoteParser = do
   _ <- many (is '\n')
+  lines <- some blockquoteLineParser
+  return $ Blockquote lines
+
+
+-- Parser for single blockquote line
+blockquoteLineParser :: Parser ADT
+blockquoteLineParser = do
   _ <- spaces
   _ <- charTok '>'
   content <- freeTextParser
-  return $ Blockquote content
+  return $ Paragraph content
 
 
 -- Parser for code
@@ -159,7 +184,7 @@ orderedListFirstItemParser = do
     n <- some digit
     guard (n == "1") -- The first item must start with 1
     -- Parse the ". " separator
-    _ <- is '.' *> spaces
+    _ <- is '.' *> inlineSpace
     -- Parse the content of the list item (it can contain text modifiers or plain text)
     content <- freeTextParser
     return $ OrderedListItem content
@@ -199,10 +224,27 @@ orderedListParser :: Parser ADT
 orderedListParser = do
     _ <- many (is '\n')
     -- Parse the first ordered list item
-    firstItem <- orderedListItemParser
+    firstItem <- orderedListFirstItemParser
     -- Parse additional items, if present, separated by exactly one newline
-    moreItems <- many (is '\n' *> (subListParser<|> orderedListItemParser))
-    return $ OrderedList (firstItem : moreItems)
+    moreItems <- many (is '\n' *> (subListParser <|> orderedListItemParser))
+    let finalList = mergeSublistIntoPreviousItem (firstItem : moreItems)
+    return $ OrderedList finalList
+
+
+-- Function to merge sublists into the previous list item
+mergeSublistIntoPreviousItem :: [ADT] -> [ADT]
+mergeSublistIntoPreviousItem = foldl processItem []
+  where
+    processItem acc currentItem =
+      case currentItem of
+        OrderedList subItems ->
+          case acc of
+            (OrderedListItem prevItems : rest) ->
+              -- Merge sublist into the previous list item
+              OrderedListItem (prevItems ++ [OrderedList subItems]) : rest
+            _ -> acc ++ [OrderedList subItems] -- If no previous item exists, just add the sublist
+        _ -> acc ++ [currentItem]
+
 
 
 -- Parser for table cell
@@ -276,10 +318,10 @@ convertWithIndent _ (FreeText s) = s
 
 -- Block elements (with newlines and indentation)
 convertWithIndent level (Image alt url caption) =
-    indent level ++ "<p><img src=\"" ++ url ++ "\" alt=\"" ++ alt ++ "\" title=\"" ++ caption ++ "\"></p>\n"
+    indent level ++ "<img src=\"" ++ url ++ "\" alt=\"" ++ alt ++ "\" title=\"" ++ caption ++ "\">\n"
 
 convertWithIndent level (FootnoteReference (Footnote s) ref) =
-    indent level ++ "<p id=\"#ref" ++ s ++ "\">" ++ ref ++ "</p>\n"
+    indent level ++ "<p id=\"fn" ++ s ++ "\">" ++ ref ++ "</p>\n"
 
 convertWithIndent level (Header n content) =
     indent level ++ "<h" ++ show n ++ ">" ++ concatMap (convertWithIndent 0) content ++ "</h" ++ show n ++ ">\n"
@@ -293,11 +335,19 @@ convertWithIndent level (Code language text) =
 convertWithIndent level (CodeNoLang text) =
     indent level ++ "<pre><code>" ++ text ++ "</code></pre>\n"
 
+-- Convert an ordered list
 convertWithIndent level (OrderedList items) =
     indent level ++ "<ol>\n" ++ concatMap (convertWithIndent (level + 1)) items ++ indent level ++ "</ol>\n"
 
+-- Convert an ordered list item
 convertWithIndent level (OrderedListItem content) =
-    indent level ++ "<li>" ++ concatMap (convertWithIndent 0) content ++ "</li>\n"
+    if containsSublist content
+    then
+        indent level ++ "<li>" ++ concatMap (convertWithIndent (level + 1)) (init content) ++ "\n" ++
+        convertWithIndent (level + 1) (last content) ++
+        indent level ++ "</li>\n"
+    else -- No sublist, format as a single line
+        indent level ++ "<li>" ++ concatMap (convertWithIndent (level + 1)) content ++ "</li>\n"
 
 
 convertWithIndent level (TableCell content) = concatMap (convertWithIndent 0) content
@@ -337,6 +387,15 @@ convertWithIndent level (HTMLElems elems) =
     indent (level) ++ "</body>\n\n" ++
     indent level ++ "</html>\n"
 convertWithIndent _ _ = ""
+
+
+
+-- Function to check if the content contains a sublist
+containsSublist :: [ADT] -> Bool
+containsSublist = any isOrderedList
+  where
+    isOrderedList (OrderedList _) = True
+    isOrderedList _               = False
 
 -- Original convertADTHTML function now using the helper
 convertADTHTML :: ADT -> String
