@@ -4,7 +4,7 @@ module Assignment (markdownParser, convertADTHTML) where
 import           Data.Time.Clock  (getCurrentTime)
 import           Data.Time.Format (defaultTimeLocale, formatTime)
 import           Instances        (Parser (..))
-import           Parser           (is, isNot, string, spaces, digit, oneof, noneof, tok, charTok, eof)
+import           Parser           (is, isNot, string, spaces, digit, oneof, noneof, charTok)
 import           Control.Applicative
 import           Control.Monad    (guard)
 
@@ -24,6 +24,7 @@ data ADT = Italics String
           | OrderedList [ADT]
           | OrderedListItem [ADT]
           | Table [[ADT]]
+          | TableCell [ADT]
           | Char Char
           | Paragraph [ADT]
           | HTMLElems [ADT]
@@ -61,17 +62,27 @@ inlineModifierParser :: Parser ADT
 inlineModifierParser = italicsParser <|> boldParser <|> strikethroughParser <|> linkParser <|> inlineCodeParser <|> footnoteParser
 
 -- Parser for raw text
-rawTextParser :: Parser ADT
-rawTextParser = FreeText <$> some (noneof "_*~`[]^\n")
+rawTextParser :: String -> Parser ADT
+rawTextParser except = FreeText <$> some (noneof except)
+
+inlineModifierSymbols :: String
+inlineModifierSymbols = "_*~`[]^"
 
 -- Parser for free text
-freeTextParser :: Parser [ADT]
-freeTextParser = some (inlineModifierParser <|> rawTextParser <|> charParser)
+freeTextParserExcept :: String -> String -> Parser [ADT]
+freeTextParserExcept rawExcept charExcept = some (inlineModifierParser <|> rawTextParser (rawExcept) <|> charParser charExcept)
 
+freeTextParser :: Parser [ADT]
+freeTextParser = freeTextParserExcept (inlineModifierSymbols ++ "\n") "\n"
+
+-- Utility function to trim trailing spaces from a FreeText element
+trimTrailingSpaces :: ADT -> ADT
+trimTrailingSpaces (FreeText s) = FreeText $ reverse $ dropWhile (== ' ') $ reverse s
+trimTrailingSpaces other = other
 
 -- Parser for a single character that is not a newline
-charParser :: Parser ADT
-charParser = Char <$> isNot '\n'
+charParser :: String -> Parser ADT
+charParser exclude = Char <$> noneof exclude
 
 
 -- Parser for paragraphs
@@ -86,7 +97,7 @@ paragraphParser = do
 imageParser :: Parser ADT
 imageParser = do
     -- Consume any leading newlines
-    _ <- some (is '\n')
+    _ <- many (is '\n')
     -- Parse the image format (![Alt Text](URL "Caption"))
     Image <$> altTextParser <*> urlParser <*> captionParser
   where
@@ -99,7 +110,7 @@ imageParser = do
 -- Parser for footnotes references ([^N]: ...)
 footnoteReferenceParser :: Parser ADT
 footnoteReferenceParser = do
-    _ <- some (is '\n')
+    _ <- many (is '\n')
     _ <- spaces
     n <- footnoteParser
     _ <- charTok ':'
@@ -121,7 +132,7 @@ headerParser = do
 -- Parser for Blockquotes (>)
 blockquoteParser :: Parser ADT
 blockquoteParser = do
-  _ <- some (is '\n')
+  _ <- many (is '\n')
   _ <- spaces
   _ <- charTok '>'
   content <- freeTextParser
@@ -131,12 +142,13 @@ blockquoteParser = do
 -- Parser for code
 codeParser :: Parser ADT
 codeParser = do
-  _ <- some (is '\n')
+  _ <- many (is '\n')
   _ <- spaces *> string "```"
   language <- spaces *> some (isNot '\n')
   _ <- is '\n'
-  text <- many (isNot '`')
+  content <- many (isNot '`')
   _ <- spaces *> string "```"
+  let text = if last content == '\n' then init content else content
   return $ if null language then CodeNoLang text else Code language text
 
 
@@ -185,12 +197,24 @@ subListParser = do
 -- Parser for an ordered list (contains at least one item, separated by exactly one newline)
 orderedListParser :: Parser ADT
 orderedListParser = do
-    _ <- some (is '\n')
+    _ <- many (is '\n')
     -- Parse the first ordered list item
     firstItem <- orderedListItemParser
     -- Parse additional items, if present, separated by exactly one newline
     moreItems <- many (is '\n' *> (subListParser<|> orderedListItemParser))
     return $ OrderedList (firstItem : moreItems)
+
+
+-- Parser for table cell
+tableCellParser :: Parser ADT
+tableCellParser = do
+    _ <- spaces
+    -- Parse the cell content (it can contain text modifiers or plain text)
+    content <- freeTextParserExcept (inlineModifierSymbols ++ "|\n") "|\n"
+    let trimmedContent = case content of
+            [] -> []
+            _ -> init content ++ [trimTrailingSpaces (last content)]
+    return $ TableCell trimmedContent
 
 
 -- Parser for a table row (e.g., "| Cell1 | Cell2 |")
@@ -199,9 +223,9 @@ tableRowParser = do
     _ <- spaces
     -- Parse the leading pipe
     _ <- charTok '|'
-    -- Parse each cell, separated by pipes, trimming spaces using `tok` for cells
-    cells <- some (tok (some (noneof "|\n")) <* charTok '|')
-    return $ map FreeText cells
+    -- Parse each cell, separated by pipes
+    cells <- some (tableCellParser <* charTok '|')
+    return $ cells
 
 -- Parser for the separator row (e.g., "| --- | --- |")
 separatorRowParser :: Parser ()
@@ -216,7 +240,7 @@ separatorRowParser = do
 -- Parser for the entire table
 tableParser :: Parser ADT
 tableParser = do
-    _ <- some (is '\n')
+    _ <- many (is '\n')
     -- Parse the header row
     header <- tableRowParser
     -- Parse the separator row
@@ -234,33 +258,86 @@ markdownParser = HTMLElems <$> some(imageParser <|> footnoteReferenceParser <|> 
 getTime :: IO String
 getTime = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
 
+
+-- Helper function to add indentation
+indent :: Int -> String
+indent level = replicate (level * 4) ' '  -- Four spaces per indentation level
+
+-- Convert ADT to HTML with indentation
+convertWithIndent :: Int -> ADT -> String
+-- Inline elements (no newlines after them)
+convertWithIndent _ (Italics s) = "<em>" ++ s ++ "</em>"
+convertWithIndent _ (Bold s) = "<strong>" ++ s ++ "</strong>"
+convertWithIndent _ (Strikethrough s) = "<del>" ++ s ++ "</del>"
+convertWithIndent _ (Link text url) = "<a href=\"" ++ url ++ "\">" ++ text ++ "</a>"
+convertWithIndent _ (InlineCode s) = "<code>" ++ s ++ "</code>"
+convertWithIndent _ (Footnote s) = "<sup><a id=\"fn" ++ s ++ "ref\" href=\"#fn" ++ s ++ "\">" ++ s ++ "</a></sup>"
+convertWithIndent _ (FreeText s) = s
+
+-- Block elements (with newlines and indentation)
+convertWithIndent level (Image alt url caption) =
+    indent level ++ "<p><img src=\"" ++ url ++ "\" alt=\"" ++ alt ++ "\" title=\"" ++ caption ++ "\"></p>\n"
+
+convertWithIndent level (FootnoteReference (Footnote s) ref) =
+    indent level ++ "<p id=\"#ref" ++ s ++ "\">" ++ ref ++ "</p>\n"
+
+convertWithIndent level (Header n content) =
+    indent level ++ "<h" ++ show n ++ ">" ++ concatMap (convertWithIndent 0) content ++ "</h" ++ show n ++ ">\n"
+
+convertWithIndent level (Blockquote content) =
+    indent level ++ "<blockquote>\n" ++ concatMap (convertWithIndent (level + 1)) content ++ indent level ++ "</blockquote>\n"
+
+convertWithIndent level (Code language text) =
+    indent level ++ "<pre><code class=\"language-" ++ language ++ "\">" ++ text ++ "</code></pre>\n"
+
+convertWithIndent level (CodeNoLang text) =
+    indent level ++ "<pre><code>" ++ text ++ "</code></pre>\n"
+
+convertWithIndent level (OrderedList items) =
+    indent level ++ "<ol>\n" ++ concatMap (convertWithIndent (level + 1)) items ++ indent level ++ "</ol>\n"
+
+convertWithIndent level (OrderedListItem content) =
+    indent level ++ "<li>" ++ concatMap (convertWithIndent 0) content ++ "</li>\n"
+
+
+convertWithIndent level (TableCell content) = concatMap (convertWithIndent 0) content
+
+convertWithIndent level (Table (header:rows)) = 
+    -- Start with the table tag
+    indent level ++ "<table>\n" ++
+    -- The header row in the <thead> section
+    indent (level + 1) ++ "<thead>\n" ++
+    indent (level + 2) ++ "<tr>\n" ++ 
+    concatMap (\cell -> indent (level + 3) ++ "<th>" ++ convertWithIndent (level + 3) cell ++ "</th>\n") header ++
+    indent (level + 2) ++ "</tr>\n" ++
+    indent (level + 1) ++ "</thead>\n" ++
+    -- The remaining rows in the <tbody> section
+    indent (level + 1) ++ "<tbody>\n" ++
+    concatMap (\row -> indent (level + 2) ++ "<tr>\n" ++
+        concatMap (\cell -> indent (level + 3) ++ "<td>" ++ convertWithIndent (level + 3) cell ++ "</td>\n") row ++
+        indent (level + 2) ++ "</tr>\n") rows ++
+    indent (level + 1) ++ "</tbody>\n" ++
+    indent level ++ "</table>\n"
+
+
+convertWithIndent level (Char c) = indent level ++ [c] ++ "\n"
+
+convertWithIndent level (Paragraph content) =
+    indent level ++ "<p>" ++ concatMap (convertWithIndent (level + 1)) content ++ "</p>\n"
+
+convertWithIndent level (HTMLElems elems) =
+    indent level ++ "<!DOCTYPE html>\n" ++
+    indent level ++ "<html lang=\"en\">\n\n" ++
+    indent (level) ++ "<head>\n" ++
+    indent (level + 1) ++ "<meta charset=\"UTF-8\">\n" ++
+    indent (level + 1) ++ "<title>Test</title>\n" ++
+    indent (level) ++ "</head>\n\n" ++
+    indent (level) ++ "<body>\n" ++
+    concatMap (convertWithIndent (level + 1)) elems ++
+    indent (level) ++ "</body>\n\n" ++
+    indent level ++ "</html>\n"
+convertWithIndent _ _ = ""
+
+-- Original convertADTHTML function now using the helper
 convertADTHTML :: ADT -> String
-convertADTHTML (Italics s) = "<em>" ++ s ++ "</em>"
-convertADTHTML (Bold s) = "<strong>" ++ s ++ "</strong>"
-convertADTHTML (Strikethrough s) = "<del>" ++ s ++ "</del>"
-convertADTHTML (Link text url) = "<a href=\"" ++ url ++ "\">" ++ text ++ "</a>"
-convertADTHTML (InlineCode s) = "<code>" ++ s ++ "</code>"
-convertADTHTML (Footnote s) = "<sup><a id=\"fn" ++ s ++ "ref\" href=\"#fn" ++ s ++ "\">" ++ s ++ "</a></sup>"
-convertADTHTML (Image alt url caption) = "<img src=\"" ++ url ++ "\" alt=\"" ++ alt ++ "\" title=\"" ++ caption ++ "\">"
-convertADTHTML (FootnoteReference (Footnote s) ref) = "<p id=\"fn" ++ s ++ "\">" ++ ref ++ "</p>"
-convertADTHTML (FreeText s) = s
-convertADTHTML (Header n content) = "<h" ++ show n ++ ">" ++ concatMap convertADTHTML content ++ "</h" ++ show n ++ ">"
-convertADTHTML (Blockquote content) = undefined
-convertADTHTML (Code language text) = "<pre><code class=\"" ++ language ++ "\">" ++ text ++ "</code></pre>"
-convertADTHTML (CodeNoLang text) = "<pre><code>" ++ text ++ "</code></pre>"
-convertADTHTML (OrderedList items) = "<ol>" ++ concatMap (\item -> "<li>" ++ convertADTHTML item ++ "</li>") items ++ "</ol>"
-convertADTHTML (OrderedListItem content) = concatMap convertADTHTML content
-convertADTHTML (Table rows) = "<table>" ++ concatMap (\row -> "<tr>" ++ concatMap (\cell -> "<td>" ++ convertADTHTML cell ++ "</td>") row ++ "</tr>") rows ++ "</table>"
-convertADTHTML (Char c) = [c]
-convertADTHTML (Paragraph content) = "<p>" ++ concatMap convertADTHTML content ++ "</p>"
-convertADTHTML (HTMLElems elems) = "<!DOCTYPE html>\n" ++
-                                    "<html lang=\"en\">\n" ++
-                                    "<head>\n" ++
-                                    "  <meta charset=\"UTF-8\">\n" ++
-                                    "<title>Test</title>\n" ++
-                                    "</head>\n" ++
-                                    "<body>\n" ++
-                                        concatMap convertADTHTML elems ++
-                                    "</body>\n" ++
-                                    "</html>"
-convertADTHTML _ = ""
+convertADTHTML adt = convertWithIndent 0 adt
