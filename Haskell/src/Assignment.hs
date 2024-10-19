@@ -198,24 +198,7 @@ codeParser = do
             else Code language text
 
 
--- -- Parser for the first item of ordered list
--- orderedListFirstItemParser :: Parser ADT
--- orderedListFirstItemParser = do
---     n <- some digit
---     guard (n == "1") -- The first item must start with 1
---     _ <- is '.' *> inlineSpace
---     content <- freeTextParser
---     return $ OrderedListItem content
-
-
--- orderedListItemParser :: Parser ADT
--- orderedListItemParser = do
---     n <- some digit
---     _ <- is '.' *> spaces
---     content <- freeTextParser
---     return $ OrderedListItem content
-
-
+-- Parser for an ordered list item
 orderedListItemParser :: Bool -> Parser ADT
 orderedListItemParser isFirst = do
     n <- some digit
