@@ -19,11 +19,12 @@ const markdownInput = document.getElementById(
     "markdown-input",
 ) as HTMLTextAreaElement;
 const checkbox = document.querySelector('input[name="checkbox"]')!;
+const saveHTMLButton = document.getElementById("save-html") as HTMLButtonElement;
 
 type Action = (_: State) => State;
 
 const resetState: Action = (s) => {
-    return { ...s, save: false };
+    return { ...s, saveData: null };
 };
 
 const compose =
@@ -44,6 +45,10 @@ const input$: Observable<Action> = fromEvent<KeyboardEvent>(
 const checkboxStream$: Observable<Action> = fromEvent(checkbox, "change").pipe(
     map((event) => (event.target as HTMLInputElement).checked),
     map((value) => (s) => ({ ...s, renderHTML: value })),
+);
+
+const saveHTML$: Observable<Action> = fromEvent(saveHTMLButton, "click").pipe(
+    map(() => (s) => ({...s, save: true}))
 );
 
 function getHTML(s: State): Observable<State> {
@@ -67,16 +72,42 @@ function getHTML(s: State): Observable<State> {
     );
 }
 
+function saveHTML(s: State): Observable<State> {
+    return ajax<{ success: boolean, message: string }>({
+        url: "/api/saveHTML",
+        method: "POST",
+        headers: {
+            "Content-Type": "text/html",
+        },
+        body: s.HTML,
+    }).pipe(
+        map((response) => {
+            // Return the original state but reset the `save` field
+            return {
+                ...s,
+                save: false,
+                saveData: {
+                    message: response.response.message,
+                    success: response.response.success,
+                }
+            };
+        }),
+        first(),
+    );
+}
+
+
 const initialState: State = {
     markdown: "",
     HTML: "",
     renderHTML: true,
     save: false,
+    saveData: null,
 };
 
 function main() {
     // Subscribe to the input Observable to listen for changes
-    const subscription = merge(input$, checkboxStream$)
+    const subscription = merge(input$, checkboxStream$, saveHTML$)
         .pipe(
             map((reducer: Action) => {
                 // Reset Some variables in the state in every tick
@@ -85,6 +116,9 @@ function main() {
             }),
             mergeScan((acc: State, reducer: Action) => {
                 const newState = reducer(acc);
+                if (newState.save) {
+                    return saveHTML(newState);
+                }
                 // getHTML returns an observable of length one
                 // so we `scan` and merge the result of getHTML in to our stream
                 return getHTML(newState);
@@ -107,6 +141,10 @@ function main() {
                 } else {
                     htmlOutput.textContent = value.HTML;
                 }
+            }
+
+            if (value.saveData) {
+                alert(value.saveData.message);
             }
         });
 }

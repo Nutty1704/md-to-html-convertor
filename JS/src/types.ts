@@ -1,6 +1,14 @@
-export type State = Readonly<{
+export type { State, SaveData };
+
+type State = Readonly<{
     markdown: string;
     HTML: string;
     renderHTML: boolean;
-    save: false;
+    save: boolean;
+    saveData: SaveData | null;
+}>;
+
+type SaveData = Readonly<{
+    success: boolean;
+    message: string;
 }>;

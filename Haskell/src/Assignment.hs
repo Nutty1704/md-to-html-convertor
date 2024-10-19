@@ -1,4 +1,4 @@
-module Assignment (markdownParser, convertADTHTML) where
+module Assignment (markdownParser, convertADTHTML, getTime) where
 
 
 import           Data.Time.Clock  (getCurrentTime)
