@@ -28,6 +28,11 @@ data ADT = Italics String
           | Char Char
           | Paragraph [ADT]
           | HTMLElems [ADT]
+          | Form String String [ADT]
+          | Label String
+          | Input String String
+          | TextArea String
+          | Button String String
   -- Your ADT **must** derive Show.
   deriving (Show, Eq)
 
@@ -45,6 +50,11 @@ containsSublist = any isOrderedList
 trimTrailingSpaces :: ADT -> ADT
 trimTrailingSpaces (FreeText s) = FreeText $ reverse $ dropWhile (== ' ') $ reverse s
 trimTrailingSpaces other = other
+
+
+extractText :: ADT -> String
+extractText (FreeText s) = s
+extractText _ = ""
 
 
 -- PARSERS
@@ -293,6 +303,52 @@ tableParser = do
     return $ Table (header : rows)
 
 
+-- Parser for form elements
+
+-- Parser for label (LAB : name)
+labelParser :: Parser ADT
+labelParser = do
+    _ <- inlineSpace <* string "LAB" <* inlineSpace <* charTok ':'
+    content <- (extractText . trimTrailingSpaces) <$> rawTextParser "\n"
+    return $ Label content
+
+-- Parser for input (INP : type ; name)
+inputParser :: Parser ADT
+inputParser = do
+    _ <- inlineSpace <* string "INP" <* inlineSpace <* charTok ':'
+    inpType <- (extractText . trimTrailingSpaces) <$> rawTextParser ";\n" <* charTok ';'
+    name <- (extractText . trimTrailingSpaces) <$> rawTextParser "\n"
+    return $ Input inpType name
+
+-- Parser for text area (TA : name)
+textAreaParser :: Parser ADT
+textAreaParser = do
+    _ <- inlineSpace <* string "TA" <* inlineSpace <* charTok ':'
+    name <- (extractText . trimTrailingSpaces) <$> rawTextParser "\n"
+    return $ TextArea name
+
+-- Parser for button (BTN : type ; name)
+buttonParser :: Parser ADT
+buttonParser = do
+    _ <- inlineSpace <* string "BTN" <* inlineSpace <* charTok ':'
+    btnType <- (extractText . trimTrailingSpaces) <$> rawTextParser ";\n" <* charTok ';'
+    name <- (extractText . trimTrailingSpaces) <$> rawTextParser "\n"
+    return $ Button btnType name
+
+formElementParser :: Parser ADT
+formElementParser = labelParser <|> inputParser <|> textAreaParser <|> buttonParser
+
+-- Parser for form (FORM : action ; method)
+formParser :: Parser ADT
+formParser = do
+    _ <- many (is '\n') <* inlineSpace <* string "FORM" <* inlineSpace
+    action <- (extractText . trimTrailingSpaces) <$> rawTextParser " \n" <* inlineSpace
+    method <- (extractText . trimTrailingSpaces) <$> rawTextParser "\n" <* inlineSpace
+    content <- many (is '\n' *> formElementParser)
+    return $ Form action method content
+
+
+
 -- Parser for markdown
 markdownParser :: Parser ADT
 markdownParser = HTMLElems <$> 
@@ -300,7 +356,8 @@ markdownParser = HTMLElems <$>
         imageParser <|> footnoteReferenceParser <|>
         headerParser <|> blockquoteParser <|>
         codeParser <|> orderedListParser <|>
-        tableParser <|> paragraphParser
+        tableParser <|> formParser <|>
+        paragraphParser
         )
 
 getTime :: IO String
@@ -409,6 +466,26 @@ convertWithIndent level (Char c) =
 convertWithIndent level (Paragraph content) =
     indent level ++
     "<p>" ++ concatMap (convertWithIndent (level + 1)) content ++ "</p>\n"
+
+
+convertWithIndent level (Label content) =
+    indent level ++ "<label for=\"" ++ content ++ "\">" ++
+    content ++ "</label>\n"
+
+convertWithIndent level (Input inpType name) =
+    indent level ++ "<input type=\"" ++ inpType ++ "\" name=\"" ++ name ++ "\">\n"
+
+convertWithIndent level (TextArea name) =
+    indent level ++ "<textarea name=\"" ++ name ++ "\"></textarea>\n"
+
+convertWithIndent level (Button btnType name) =
+    indent level ++ "<button type=\"" ++ btnType ++ "\">" ++ name ++ "</button>\n"
+
+convertWithIndent level (Form action method content) = 
+    indent level ++ "<form action=\"" ++ action ++
+    "\" method=\"" ++ method ++ "\">\n" ++
+    concatMap (convertWithIndent (level + 1)) content ++
+    indent level ++ "</form>\n"
 
 convertWithIndent level (HTMLElems elems) =
     indent level ++ "<!DOCTYPE html>\n" ++
