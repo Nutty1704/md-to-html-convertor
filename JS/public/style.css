@@ -59,3 +59,19 @@ footer {
     bottom: 0;
     width: 100%;
 }
+
+.saveBtn {
+    background-color: #0d6efd;
+    color: #fff;
+    padding-block: 10px;
+    padding-inline: 15px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-top: 10px;
+    margin-inline: 10px;
+}
+
+.saveBtn:hover {
+    background-color: #0b5ed7;
+}
