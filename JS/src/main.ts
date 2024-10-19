@@ -3,6 +3,7 @@ import { map, mergeScan, first } from "rxjs/operators";
 import { ajax } from "rxjs/ajax";
 import { type Observable } from "rxjs";
 import { State } from "./types";
+import { applyCommands } from "./util";
 
 import hljs from "highlight.js/lib/core";
 
@@ -40,6 +41,7 @@ const input$: Observable<Action> = fromEvent<KeyboardEvent>(
     "input",
 ).pipe(
     map((event) => (event.target as HTMLInputElement).value),
+    map((value) => applyCommands(value)),
     map((value) => (s) => ({ ...s, markdown: value })),
 );
 
@@ -164,6 +166,8 @@ function main() {
             if (value.saveData) {
                 alert(value.saveData.message);
             }
+
+            markdownInput.value = value.markdown;
         });
 }
 if (typeof window !== "undefined") {
