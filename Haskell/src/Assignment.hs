@@ -80,7 +80,8 @@ footnoteParser = (Footnote <$> (is '[' *> is '^' *> some (digit) <* is ']'))
 
 -- inline modifier parser
 inlineModifierParser :: Parser ADT
-inlineModifierParser = italicsParser <|> boldParser <|> strikethroughParser <|> linkParser <|> inlineCodeParser <|> footnoteParser
+inlineModifierParser = italicsParser <|> boldParser <|>strikethroughParser
+                        <|> linkParser <|> inlineCodeParser <|> footnoteParser
 
 -- Parser for raw text
 rawTextParser :: String -> Parser ADT
@@ -95,7 +96,9 @@ charParser exclude = Char <$> noneof exclude
 
 -- Parser for free text
 freeTextParserExcept :: String -> String -> Parser [ADT]
-freeTextParserExcept rawExcept charExcept = some (inlineModifierParser <|> rawTextParser (rawExcept) <|> charParser charExcept)
+freeTextParserExcept rawExcept charExcept = some (
+    inlineModifierParser <|> rawTextParser (rawExcept) <|> charParser charExcept
+    )
 
 freeTextParser :: Parser [ADT]
 freeTextParser = freeTextParserExcept (inlineModifierSymbols ++ "\n") "\n"
@@ -292,7 +295,13 @@ tableParser = do
 
 -- Parser for markdown
 markdownParser :: Parser ADT
-markdownParser = HTMLElems <$> some(imageParser <|> footnoteReferenceParser <|> headerParser <|> blockquoteParser <|> codeParser <|> orderedListParser <|> tableParser <|> paragraphParser)
+markdownParser = HTMLElems <$> 
+    some(
+        imageParser <|> footnoteReferenceParser <|>
+        headerParser <|> blockquoteParser <|>
+        codeParser <|> orderedListParser <|>
+        tableParser <|> paragraphParser
+        )
 
 getTime :: IO String
 getTime = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S" <$> getCurrentTime
