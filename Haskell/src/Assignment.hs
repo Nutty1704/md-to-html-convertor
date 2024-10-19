@@ -55,23 +55,23 @@ trimTrailingSpaces other = other
 
 -- Parser for italics (_)
 italicsParser :: Parser ADT
-italicsParser = (Italics <$> (is '_' *> some (isNot '_') <* is '_'))
+italicsParser = (Italics <$> (is '_' *> some (noneof "_\n") <* is '_'))
 
 -- Parser for bold (**)
 boldParser :: Parser ADT
-boldParser = (Bold <$> (string "**" *> some (isNot '*') <* string "**"))
+boldParser = (Bold <$> (string "**" *> some (noneof "*\n") <* string "**"))
 
 -- Parser for strikethrough (~~)
 strikethroughParser :: Parser ADT
-strikethroughParser = (Strikethrough <$> (string "~~" *> some (isNot '~') <* string "~~"))
+strikethroughParser = (Strikethrough <$> (string "~~" *> some (noneof "~\n") <* string "~~"))
 
 -- Parser for Link ([...](...))
 linkParser :: Parser ADT
-linkParser = Link <$> (is '[' *> some (isNot ']') <* is ']') <*> (spaces *> is '(' *> some (isNot ')') <* is ')')
+linkParser = Link <$> (is '[' *> some (noneof "]\n") <* is ']') <*> (spaces *> is '(' *> some (noneof ")\n") <* is ')')
 
 -- Parser for inline code (`...`)
 inlineCodeParser :: Parser ADT
-inlineCodeParser = (InlineCode <$> (is '`' *> some (isNot '`') <* is '`'))
+inlineCodeParser = (InlineCode <$> (is '`' *> some (noneof "`\n") <* is '`'))
 
 -- Parser for footnotes ([^N])
 footnoteParser :: Parser ADT
@@ -119,9 +119,9 @@ imageParser = do
     _ <- many (is '\n')
     Image <$> altTextParser <*> urlParser <*> captionParser
   where
-    altTextParser = inlineSpace *> is '!' *> is '[' *> some (isNot ']') <* is ']'
-    urlParser = inlineSpace *> is '(' *> some (isNot ' ') <* is ' '
-    captionParser = inlineSpace *> is '"' *> some (isNot '"') <* is '"' <* is ')'
+    altTextParser = inlineSpace *> is '!' *> is '[' *> some (noneof "]\n") <* is ']'
+    urlParser = inlineSpace *> is '(' *> some (noneof "\t\r\f\v \n")
+    captionParser = inlineSpace *> is '"' *> some (noneof "\"\n") <* is '"' <* is ')'
 
 
 -- Parser for footnotes references ([^N]: ...)
@@ -175,8 +175,7 @@ blockquoteParser = do
 -- Parser for single blockquote line
 blockquoteLineParser :: Parser ADT
 blockquoteLineParser = do
-  _ <- spaces
-  _ <- charTok '>'
+  _ <- spaces <* charTok '>'
   content <- freeTextParser
   return $ Paragraph content
 
@@ -185,9 +184,8 @@ blockquoteLineParser = do
 codeParser :: Parser ADT
 codeParser = do
   _ <- many (is '\n')
-  _ <- spaces *> string "```"
-  language <- spaces *> some (isNot '\n')
-  _ <- is '\n'
+  _ <- inlineSpace *> string "```"
+  language <- some (isNot '\n') <* is '\n'
   content <- many (isNot '`')
   _ <- spaces *> string "```"
   let text = if last content == '\n'
