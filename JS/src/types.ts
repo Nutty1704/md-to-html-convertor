@@ -6,6 +6,7 @@ type State = Readonly<{
     renderHTML: boolean;
     save: boolean;
     saveData: SaveData | null;
+    title: string;
 }>;
 
 type SaveData = Readonly<{

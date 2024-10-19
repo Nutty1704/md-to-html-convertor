@@ -49,6 +49,11 @@ textarea {
     min-height: 100px;
 }
 
+#render-checkbox {
+    margin-left: 15px;
+    margin-block: 10px;
+}
+
 footer {
     margin-top: 20px;
     background-color: #333;
@@ -74,4 +79,17 @@ footer {
 
 .saveBtn:hover {
     background-color: #0b5ed7;
+}
+
+#title-container {
+    margin-inline: 30px;
+    margin-block: 15px;
+}
+
+#html-title-input {
+    padding-block: 10px;
+    padding-inline: 25px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    resize: none;
 }

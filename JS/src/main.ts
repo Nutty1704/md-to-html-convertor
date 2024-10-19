@@ -20,6 +20,7 @@ const markdownInput = document.getElementById(
 ) as HTMLTextAreaElement;
 const checkbox = document.querySelector('input[name="checkbox"]')!;
 const saveHTMLButton = document.getElementById("save-html") as HTMLButtonElement;
+const titleInput = document.getElementById("html-title-input") as HTMLInputElement;
 
 type Action = (_: State) => State;
 
@@ -51,6 +52,11 @@ const saveHTML$: Observable<Action> = fromEvent(saveHTMLButton, "click").pipe(
     map(() => (s) => ({...s, save: true}))
 );
 
+const titleInput$: Observable<Action> = fromEvent(titleInput, "input").pipe(
+    map((event) => (event.target as HTMLInputElement).value),
+    map((value) => (s) => ({ ...s, title: value })),
+);
+
 function getHTML(s: State): Observable<State> {
     // Get the HTML as a stream
     return ajax<{ html: string }>({
@@ -72,14 +78,25 @@ function getHTML(s: State): Observable<State> {
     );
 }
 
+function updateTitle(title: string, html: string): string {
+    if (title === "") {
+        return html;
+    }
+
+    const titleRegex = /<title>.*<\/title>/;
+    const titleTag = `<title>${title}</title>`;
+    return html.replace(titleRegex, titleTag);
+}
+
 function saveHTML(s: State): Observable<State> {
+
     return ajax<{ success: boolean, message: string }>({
         url: "/api/saveHTML",
         method: "POST",
         headers: {
             "Content-Type": "text/html",
         },
-        body: s.HTML,
+        body: updateTitle(s.title, s.HTML),
     }).pipe(
         map((response) => {
             // Return the original state but reset the `save` field
@@ -103,11 +120,12 @@ const initialState: State = {
     renderHTML: true,
     save: false,
     saveData: null,
+    title: ""
 };
 
 function main() {
     // Subscribe to the input Observable to listen for changes
-    const subscription = merge(input$, checkboxStream$, saveHTML$)
+    const subscription = merge(input$, checkboxStream$, saveHTML$, titleInput$)
         .pipe(
             map((reducer: Action) => {
                 // Reset Some variables in the state in every tick
@@ -132,14 +150,14 @@ function main() {
                 if (value.renderHTML) {
                     const highlight =
                         '<link rel="stylesheet" href="https://unpkg.com/@highlightjs/cdn-assets@11.3.1/styles/default.min.css" />';
-                    htmlOutput.innerHTML = highlight + value.HTML;
+                    htmlOutput.innerHTML = highlight + updateTitle(value.title, value.HTML);
                     // Magic code to add code highlighting
                     const blocks = htmlOutput.querySelectorAll("pre code");
                     blocks.forEach((block) =>
                         hljs.highlightElement(block as HTMLElement),
                     );
                 } else {
-                    htmlOutput.textContent = value.HTML;
+                    htmlOutput.textContent = updateTitle(value.title, value.HTML);
                 }
             }
 
