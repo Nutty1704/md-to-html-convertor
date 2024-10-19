@@ -93,3 +93,34 @@ footer {
     border-radius: 10px;
     resize: none;
 }
+
+#shortcuts-contained {
+    margin: 20px;
+    width: 50%;
+}
+
+#shortcuts-table {
+    border-collapse: collapse;
+    width: 50%;
+    text-align: center;
+    border: 1px solid #333;
+}
+
+#shortcuts-table tr,
+#shortcuts-table th,
+#shortcuts-table td {
+    border: 1px solid #333;
+    padding: 10px;
+    font-size: 0.95rem;
+}
+
+#shortcuts-table th {
+    background-color: #333;
+    color: #fff;
+}
+
+#shortcuts-table tr {
+    background-color: rgb(250, 250, 250);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-weight: 500;
+}
