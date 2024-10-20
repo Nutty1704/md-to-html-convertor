@@ -51,7 +51,7 @@ trimTrailingSpaces :: ADT -> ADT
 trimTrailingSpaces (FreeText s) = FreeText $ reverse $ dropWhile (== ' ') $ reverse s
 trimTrailingSpaces other = other
 
-
+-- Function to extract text from FreeText elements
 extractText :: ADT -> String
 extractText (FreeText s) = s
 extractText _ = ""
@@ -60,24 +60,37 @@ extractText _ = ""
 -- PARSERS
 
 
-
 -- Parsers for inline modifiers
 
 -- Parser for italics (_)
 italicsParser :: Parser ADT
-italicsParser = (Italics <$> (is '_' *> some (noneof "_\n") <* is '_'))
+italicsParser = Italics <$> (is '_' *> some (noneof "_\n") <* is '_')
 
 -- Parser for bold (**)
 boldParser :: Parser ADT
-boldParser = (Bold <$> (string "**" *> some (noneof "*\n") <* string "**"))
+boldParser = Bold <$> (string "**" *> some (noneof "*\n") <* string "**")
 
 -- Parser for strikethrough (~~)
 strikethroughParser :: Parser ADT
-strikethroughParser = (Strikethrough <$> (string "~~" *> some (noneof "~\n") <* string "~~"))
+-- Parser for strikethrough (~~)
+strikethroughParser :: Parser ADT
+strikethroughParser = 
+    Strikethrough <$> 
+    (string "~~" *> 
+    some (noneof "~\n") <* 
+    string "~~")
 
 -- Parser for Link ([...](...))
 linkParser :: Parser ADT
-linkParser = Link <$> (is '[' *> some (noneof "]\n") <* is ']') <*> (spaces *> is '(' *> some (noneof ")\n") <* is ')')
+linkParser = 
+    Link <$> 
+    (is '[' *> 
+    some (noneof "]\n") <* 
+    is ']') <*> 
+    (spaces *> 
+    is '(' *> 
+    some (noneof ")\n") <* 
+    is ')')
 
 -- Parser for inline code (`...`)
 inlineCodeParser :: Parser ADT
@@ -132,19 +145,33 @@ imageParser = do
     _ <- many (is '\n')
     Image <$> altTextParser <*> urlParser <*> captionParser
   where
-    altTextParser = inlineSpace *> is '!' *> is '[' *> some (noneof "]\n") <* is ']'
-    urlParser = inlineSpace *> is '(' *> some (noneof "\t\r\f\v \n")
-    captionParser = inlineSpace *> is '"' *> some (noneof "\"\n") <* is '"' <* is ')'
+    -- Parses ![....] section of the image
+    altTextParser =
+        inlineSpace *>
+        is '!' *>
+        is '[' *>
+        some (noneof "]\n") <*
+        is ']'
+    -- Parses (....) url section of the image until first space
+    urlParser =
+        inlineSpace *>
+        is '(' *>
+        some (noneof "\t\r\f\v \n")
+    -- Parses "...." caption section of the image until the closing ")
+    captionParser =
+        inlineSpace *>
+        is '"' *>
+        some (noneof "\"\n") <*
+        is '"' <*
+        is ')'
 
 
 -- Parser for footnotes references ([^N]: ...)
 footnoteReferenceParser :: Parser ADT
 footnoteReferenceParser = do
-    _ <- many (is '\n')
-    _ <- spaces
-    n <- footnoteParser
-    _ <- charTok ':'
-    ref <- inlineSpace *> some (isNot '\n')
+    _ <- many (is '\n') <* inlineSpace
+    n <- footnoteParser <* charTok ':'  -- parse the [^N]: part
+    ref <- inlineSpace *> some (isNot '\n')  -- parse the remaining part
     return $ FootnoteReference n ref
 
 
@@ -152,24 +179,24 @@ footnoteReferenceParser = do
 normalHeaderParser :: Parser ADT
 normalHeaderParser = do
     _ <- many (is '\n') <* inlineSpace
-    n <- length <$> some (is '#')
-    guard (n >= 1 && n <= 6)
+    n <- length <$> some (is '#')  -- Count the number of #s
+    guard (n >= 1 && n <= 6)        -- Ensure valid number of #s
     _ <- inlineSpace
-    content <- freeTextParser
+    content <- freeTextParser       -- Parse the content of the header
     return $ Header n content
 
 -- Parser for alternative headers (= or -)
 altHeaderParser :: Parser ADT
 altHeaderParser = do
     _ <- many (is '\n') *> spaces
-    text <- freeTextParser <* is '\n'
-    nxtLine <- inlineSpace *> many (isNot '\n')
+    text <- freeTextParser <* is '\n'  -- Parse the header text
+    nxtLine <- inlineSpace *> many (isNot '\n')  -- Parse the next line
     let n = if all (== '=') nxtLine && length nxtLine > 1
                 then 1 
             else if all (== '-') nxtLine && length nxtLine > 1
                 then 2 
             else 0
-    guard (n > 0)
+    guard (n > 0)  -- Ensure the next line is all = or -
     return $ Header n text
 
 
@@ -181,7 +208,7 @@ headerParser = normalHeaderParser <|> altHeaderParser
 blockquoteParser :: Parser ADT
 blockquoteParser = do
   _ <- many (is '\n')
-  lines <- some blockquoteLineParser
+  lines <- some blockquoteLineParser  -- Parse all the consecutive blockquote lines
   return $ Blockquote lines
 
 
@@ -189,7 +216,7 @@ blockquoteParser = do
 blockquoteLineParser :: Parser ADT
 blockquoteLineParser = do
   _ <- spaces <* charTok '>'
-  content <- freeTextParser
+  content <- freeTextParser  -- Parse the content of the blockquote line
   return $ Paragraph content
 
 
@@ -221,7 +248,7 @@ orderedListItemParser isFirst = do
 -- Parser for a sublist item (starting with exactly 4 spaces before the number)
 sublistItemParser :: Parser ADT
 sublistItemParser = do
-    _ <- string "    "
+    _ <- string "    "  -- Match exactly 4 spaces to identify a sublist
     orderedListItemParser False
 
 --Parser for sub list
@@ -229,7 +256,7 @@ subListParser :: Parser ADT
 subListParser = do
     _ <- string "    "
     firstItem <- orderedListItemParser True
-    moreItems <- many (is '\n' *> sublistItemParser)
+    moreItems <- many (is '\n' *> sublistItemParser)  -- Parse the subsequent sublist items
     return $ OrderedList (firstItem : moreItems)
 
 
@@ -238,7 +265,7 @@ orderedListParser :: Parser ADT
 orderedListParser = do
     _ <- many (is '\n')
     firstItem <- orderedListItemParser True
-    moreItems <- many (is '\n' *> (subListParser <|> orderedListItemParser False))
+    moreItems <- many (is '\n' *> (subListParser <|> orderedListItemParser False))  -- Parse the subsequent sublist or list items
     let finalList = mergeSublistIntoPreviousItem (firstItem : moreItems)
     return $ OrderedList finalList
 
@@ -257,9 +284,10 @@ mergeSublistIntoPreviousItem = foldl processItem []
               let prevItems = init acc
                   lastItem = last acc 
               in case lastItem of
+                    -- If the last item is an OrderedListItem then merge the sublist into it (append the sublist to its content)
                    OrderedListItem content ->
                      prevItems ++ [OrderedListItem (content ++ [OrderedList subItems])] -- Merge the sublist into the last item (append to the content)
-                   _ -> acc ++ [OrderedList subItems]
+                   _ -> acc ++ [OrderedList subItems] -- Otherwise leave the sublist as a separate item
         _ -> acc ++ [currentItem]
 
 
@@ -268,7 +296,7 @@ mergeSublistIntoPreviousItem = foldl processItem []
 tableCellParser :: Parser ADT
 tableCellParser = do
     _ <- spaces
-    content <- freeTextParserExcept (inlineModifierSymbols ++ "|\n") "|\n"
+    content <- freeTextParserExcept (inlineModifierSymbols ++ "|\n") "|\n" -- Parse until the next pipe or newline
     let trimmedContent = case content of
             [] -> []
             _ -> init content ++ [trimTrailingSpaces (last content)] -- Remove trailing spaces from the last element
@@ -279,7 +307,7 @@ tableCellParser = do
 tableRowParser :: Int -> Parser [ADT]
 tableRowParser numCells = do
     _ <- spaces <* charTok '|'
-    cells <- some (tableCellParser <* charTok '|')
+    cells <- some (tableCellParser <* charTok '|')  -- Parse all the cells in the row
     let n = length cells
     guard (n == numCells || numCells == 0) -- Ensure same number of cells as the header row
     return $ cells
@@ -288,8 +316,8 @@ tableRowParser numCells = do
 separatorRowParser :: Int -> Parser ()
 separatorRowParser numCells = do
     _ <- spaces <* charTok '|'
-    n <- length <$> some (spaces *> some (is '-') *> spaces <* charTok '|')
-    guard (n == numCells)
+    n <- length <$> some (spaces *> some (is '-') *> spaces <* charTok '|') -- Count the number of cells
+    guard (n == numCells) -- Ensure same number of cells as the header row
     return ()
 
 -- Parser for the entire table
@@ -299,7 +327,7 @@ tableParser = do
     header <- tableRowParser 0
     let n = length header
     separatorRowParser n
-    rows <- many $ tableRowParser n
+    rows <- many $ tableRowParser n -- Parse all the rows
     return $ Table (header : rows)
 
 
@@ -309,6 +337,7 @@ tableParser = do
 labelParser :: Parser ADT
 labelParser = do
     _ <- inlineSpace <* string "LAB" <* inlineSpace <* charTok ':'
+    -- Parse the content of the label then strip trailing spaces then extract the text as a string
     content <- (extractText . trimTrailingSpaces) <$> rawTextParser "\n"
     return $ Label content
 
@@ -316,6 +345,7 @@ labelParser = do
 inputParser :: Parser ADT
 inputParser = do
     _ <- inlineSpace <* string "INP" <* inlineSpace <* charTok ':'
+    -- Similar processing to the label parser, parses the type of the input and the name
     inpType <- (extractText . trimTrailingSpaces) <$> rawTextParser ";\n" <* charTok ';'
     name <- (extractText . trimTrailingSpaces) <$> rawTextParser "\n"
     return $ Input inpType name
@@ -324,6 +354,7 @@ inputParser = do
 textAreaParser :: Parser ADT
 textAreaParser = do
     _ <- inlineSpace <* string "TA" <* inlineSpace <* charTok ':'
+    -- Similar processing to the label parser, parses the name of the text area
     name <- (extractText . trimTrailingSpaces) <$> rawTextParser "\n"
     return $ TextArea name
 
@@ -331,6 +362,7 @@ textAreaParser = do
 buttonParser :: Parser ADT
 buttonParser = do
     _ <- inlineSpace <* string "BTN" <* inlineSpace <* charTok ':'
+    -- Similar processing to the label parser, parses the type of the button and the name
     btnType <- (extractText . trimTrailingSpaces) <$> rawTextParser ";\n" <* charTok ';'
     name <- (extractText . trimTrailingSpaces) <$> rawTextParser "\n"
     return $ Button btnType name
@@ -342,6 +374,7 @@ formElementParser = labelParser <|> inputParser <|> textAreaParser <|> buttonPar
 formParser :: Parser ADT
 formParser = do
     _ <- many (is '\n') <* inlineSpace <* string "FORM" <* inlineSpace
+    -- Parse the action and method of the form (processed similarly to the label parser)
     action <- (extractText . trimTrailingSpaces) <$> rawTextParser " \n" <* inlineSpace
     method <- (extractText . trimTrailingSpaces) <$> rawTextParser "\n" <* inlineSpace
     content <- many (is '\n' *> formElementParser)
@@ -407,6 +440,7 @@ convertWithIndent level (Header n content) =
     concatMap (convertWithIndent 0) content ++
     "</h" ++ show n ++ ">\n"
 
+-- Wrap blockquote content in <blockquote> tags then call convertWithIndent on each line and concatenate
 convertWithIndent level (Blockquote content) =
     indent level ++
     "<blockquote>\n" ++ concatMap (convertWithIndent (level + 1)) content ++ indent level ++ "</blockquote>\n"
@@ -419,12 +453,14 @@ convertWithIndent level (CodeNoLang text) =
     indent level ++
     "<pre><code>" ++ text ++ "</code></pre>\n"
 
+-- Wrap the list in <ol> tags then call convertWithIndent on each item and concatenate
 convertWithIndent level (OrderedList items) =
     indent level ++
     "<ol>\n" ++
     concatMap (convertWithIndent (level + 1)) items
     ++ indent level ++ "</ol>\n"
 
+-- If the list item contains a sublist, format it as a list item with sublist, otherwise format as a single line
 convertWithIndent level (OrderedListItem content) =
     if containsSublist content
     then -- Contains a sublist, format as a list item with sublist
@@ -433,7 +469,9 @@ convertWithIndent level (OrderedListItem content) =
         "\n" ++ convertWithIndent (level + 1) (last content) ++
         indent level ++ "</li>\n"
     else -- No sublist, format as a single line
-        indent level ++ "<li>" ++ concatMap (convertWithIndent (level + 1)) content ++ "</li>\n"
+        indent level ++ "<li>" ++
+        concatMap (convertWithIndent (level + 1)) content ++
+        "</li>\n"
 
 
 convertWithIndent level (TableCell content) =
@@ -446,7 +484,8 @@ convertWithIndent level (Table (header:rows)) =
     indent (level + 1) ++ "<thead>\n" ++
     indent (level + 2) ++ "<tr>\n" ++ 
     concatMap (\cell -> indent (level + 3) ++ "<th>" ++
-    convertWithIndent (level + 3) cell ++ "</th>\n") header ++
+                convertWithIndent (level + 3) cell ++ "</th>\n"
+            ) header ++
     indent (level + 2) ++ "</tr>\n" ++
     indent (level + 1) ++ "</thead>\n" ++
     -- The remaining rows in the <tbody> section
@@ -484,6 +523,7 @@ convertWithIndent level (Button btnType name) =
 convertWithIndent level (Form action method content) = 
     indent level ++ "<form action=\"" ++ action ++
     "\" method=\"" ++ method ++ "\">\n" ++
+    -- Convert each form element with indentation
     concatMap (convertWithIndent (level + 1)) content ++
     indent level ++ "</form>\n"
 

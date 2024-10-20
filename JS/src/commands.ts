@@ -1,12 +1,13 @@
 type Executor = (match: RegExpMatchArray) => string;
 
+// Command interface, with a regex to match and a handler to execute
 interface Command {
     regex: RegExp;
     handler: Executor;
 }
 
 
-// Command 1: Table generation command
+// Table generation command
 const tableCommand: Command = {
     regex: /TAB(\d+)x(\d+)\./, // Matches TABNxM
     handler: (match: RegExpMatchArray): string => {
@@ -16,7 +17,7 @@ const tableCommand: Command = {
     }
 };
 
-
+// Image generation command
 const imageCommand: Command = {
     regex: /IMG\|([^|]+)\|([^|]+)\|([^|]+)\|/, // Matches IMG|alt|link|caption|
     handler: (match: RegExpMatchArray): string => {
@@ -30,11 +31,25 @@ const imageCommand: Command = {
 export const commands: Command[] = [tableCommand, imageCommand];
 
 
+// Helper Functions
+
 // Helper function to generate a table
 function generateTable(rows: number, columns: number): string {
-    const headerRow = `| ${Array(columns).fill("Heading").map((h, i) => h + ' ' + (i + 1)).join(" | ")} |`;
-    const separatorRow = `| ${Array(columns).fill("---------").join(" | ")} |`;
-    const contentRows = Array(rows).fill(`| ${Array(columns).fill("Item").map((i, j) => i + ' ' + (j + 1)).join(" | ")} |`);
+    const headerRow = `| ${Array(columns)
+        .fill("Heading")
+        .map((h, i) => h + ' ' + (i + 1))  // Add the column number to the heading
+        .join(" | ")} |`;
+
+    const separatorRow = `| ${Array(columns)
+        .fill("---------")
+        .join(" | ")} |`;
+
+    const contentRows = Array(rows - 1)
+        .fill(`| ${Array(columns)
+        .fill("Item")
+        .map((i, j) => i + ' ' + (j + 1))  // Add the column number to the item
+        .join(" | ")} |`);
+
     return [headerRow, separatorRow, ...contentRows].join("\n");
 }
 

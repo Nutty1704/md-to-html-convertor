@@ -3,7 +3,7 @@ import { map, mergeScan, first } from "rxjs/operators";
 import { ajax } from "rxjs/ajax";
 import { type Observable } from "rxjs";
 import { State } from "./types";
-import { applyCommands } from "./util";
+import { applyCommands, updateTitle } from "./util";
 
 import hljs from "highlight.js/lib/core";
 
@@ -41,7 +41,7 @@ const input$: Observable<Action> = fromEvent<KeyboardEvent>(
     "input",
 ).pipe(
     map((event) => (event.target as HTMLInputElement).value),
-    map((value) => applyCommands(value)),
+    map((value) => applyCommands(value)),  // Apply applicable shortcuts/commands to the markdown
     map((value) => (s) => ({ ...s, markdown: value })),
 );
 
@@ -50,6 +50,7 @@ const checkboxStream$: Observable<Action> = fromEvent(checkbox, "change").pipe(
     map((value) => (s) => ({ ...s, renderHTML: value })),
 );
 
+// Observable for save button click
 const saveHTML$: Observable<Action> = fromEvent(saveHTMLButton, "click").pipe(
     map(() => (s) => ({...s, save: true}))
 );
@@ -80,16 +81,7 @@ function getHTML(s: State): Observable<State> {
     );
 }
 
-function updateTitle(title: string, html: string): string {
-    if (title === "") {
-        return html;
-    }
-
-    const titleRegex = /<title>.*<\/title>/;
-    const titleTag = `<title>${title}</title>`;
-    return html.replace(titleRegex, titleTag);
-}
-
+// Function to save the HTML to the server
 function saveHTML(s: State): Observable<State> {
 
     return ajax<{ success: boolean, message: string }>({
@@ -98,13 +90,13 @@ function saveHTML(s: State): Observable<State> {
         headers: {
             "Content-Type": "text/html",
         },
-        body: updateTitle(s.title, s.HTML),
+        body: updateTitle(s.title, s.HTML),  // Send the HTML with the updated title
     }).pipe(
         map((response) => {
-            // Return the original state but reset the `save` field
+            // Return updated state with the saveData
             return {
                 ...s,
-                save: false,
+                save: false,  // reset the save field
                 saveData: {
                     message: response.response.message,
                     success: response.response.success,
@@ -136,6 +128,7 @@ function main() {
             }),
             mergeScan((acc: State, reducer: Action) => {
                 const newState = reducer(acc);
+                // If the save flag is set, save the HTML
                 if (newState.save) {
                     return saveHTML(newState);
                 }
@@ -163,10 +156,12 @@ function main() {
                 }
             }
 
+            // Show the save message if it exists
             if (value.saveData) {
                 alert(value.saveData.message);
             }
 
+            // Update the markdown input with the new value after applying shortcuts
             markdownInput.value = value.markdown;
         });
 }
