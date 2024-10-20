@@ -32,6 +32,7 @@ writeHTML :: String -> IO (Either SomeException String)
 writeHTML htmlContent = do
   currentTime <- formatTime <$> getTime
   let fileName = "html_output_" ++ currentTime ++ ".html"
+  -- Attempt to write the HTML content to a file and catch any exceptions
   result <- try (writeFile fileName htmlContent) :: IO (Either SomeException ())
   return $ case result of
     Left ex  -> Left ex  -- Return the exception
@@ -55,10 +56,14 @@ main = scotty 3000 $ do
   -- Endpoint to save the HTML content to a file
   post "/api/saveHTML" $ do
     requestBody <- body
+
+    -- Extract the HTML content from the request body
     let htmlContent = unpack $ decodeUtf8 requestBody
     
+    -- Attempt to write the HTML content to a file
     result <- liftIO $ writeHTML htmlContent
     
+    -- Respond with a message indicating whether the file was saved successfully
     case result of
       Left _ -> do
         jsonResponse [("message", "File save failed"), ("success", "false")]

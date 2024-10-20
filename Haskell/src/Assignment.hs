@@ -72,8 +72,6 @@ boldParser = Bold <$> (string "**" *> some (noneof "*\n") <* string "**")
 
 -- Parser for strikethrough (~~)
 strikethroughParser :: Parser ADT
--- Parser for strikethrough (~~)
-strikethroughParser :: Parser ADT
 strikethroughParser = 
     Strikethrough <$> 
     (string "~~" *> 
