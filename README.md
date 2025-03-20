@@ -1,13 +1,3 @@
----
-title: Assignment 2 - Markdown2HTML
-author: FIT2102 Programming Paradigms
-margin: 1inch
----
-
-# Assignment 2: Markdown2HTML
-
-Please do not change the names of the functions defined in the Assignment.hs file. You may (and are highly encouraged) to implement your parsers **alongside** these pre-defined functions.
-
 ## Running the Code
 
 ```
